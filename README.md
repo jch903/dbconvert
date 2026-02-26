@@ -1,33 +1,31 @@
-# DBCONVERT — Advanced SQLite Database Conversion Tool
-
-A professional-grade SQLite export utility designed for large databases, structured exports, and Hugging Face dataset deployment.
+# DBCONVERT  
+Professional SQLite Database Conversion Tool
 
 ---
 
 ## Overview
 
-`dbconvert` is a robust SQLite database conversion tool built for:
+`dbconvert` is a production-grade SQLite database conversion utility designed for:
 
-- Structured data exports
-- Machine learning pipelines
-- Dataset archival
-- Hugging Face dataset publishing
-- Analytics workflows
+- Structured multi-table exports  
+- Large database handling (chunked export)  
+- Machine learning pipelines  
+- Hugging Face dataset publishing  
+- Analytics workflows  
 
-It supports multi-table exports and large-database handling with chunking and Parquet sharding.
+It supports multiple output formats, including Parquet and direct Hugging Face dataset upload.
 
 ---
 
-## Key Features
+## Features
 
-- Automatic SQLite validation
-- Table detection (excludes internal SQLite tables)
-- Multi-format export
+- SQLite integrity validation
+- Automatic table detection
 - Chunked export for large tables
-- Parquet sharding for big data
-- Direct Hugging Face dataset upload
-- Clean terminal UI with progress indicators
-- Dependency auto-install support (Debian-based systems)
+- Parquet sharding (ML-ready)
+- Hugging Face dataset upload
+- Structured progress output
+- Clean, production-ready Bash implementation
 
 ---
 
@@ -36,7 +34,7 @@ It supports multi-table exports and large-database handling with chunking and Pa
 | Option | Format | Use Case |
 |--------|--------|----------|
 | 1 | CSV (per table) | Lightweight structured export |
-| 2 | Combined CSV | Flat archival (can be large) |
+| 2 | CSV (combined) | Flat archival (can be large) |
 | 3 | XLSX | Excel multi-sheet export |
 | 4 | JSON | Structured API-style export |
 | 5 | SQL Dump | Full schema + data backup |
@@ -47,29 +45,117 @@ It supports multi-table exports and large-database handling with chunking and Pa
 
 ---
 
-## Recommended Format for ML / Hugging Face
+## System Requirements
 
-**Apache Parquet (Option 8 or 9)**
-
-Why:
-- Columnar compression
-- Efficient streaming
-- Native compatibility with Hugging Face `datasets`
-- Scales to very large tables
-- Ideal for model training and analytics
+- Debian / Ubuntu Linux (recommended)
+- Python 3.9+
+- SQLite3
 
 ---
 
 ## Installation
 
-### System Requirements
-
-- Debian / Ubuntu Linux
-- Python 3.9+
-- SQLite3
-
-### Install Dependencies
+### 1️⃣ Clone the Repository
 
 ```bash
-sudo apt install sqlite3 python3 python3-pip
+git clone https://github.com/jch903/dbconvert.git
+cd dbconvert
+2️⃣ Install Python Dependencies
 pip install -r requirements.txt
+
+This installs:
+
+pandas
+
+pyarrow
+
+datasets
+
+huggingface_hub
+
+openpyxl
+
+tqdm
+
+tabulate
+
+3️⃣ Install Required System Packages
+sudo apt install sqlite3 pv figlet toilet lolcat
+4️⃣ Install dbconvert Globally
+
+Run the provided installation script:
+
+chmod +x install.sh
+./install.sh
+
+This copies the executable into:
+
+/usr/local/bin/dbconvert
+
+After installation, you can run:
+
+dbconvert
+
+from anywhere on your system.
+
+Usage
+
+Simply run:
+
+dbconvert
+
+You will be prompted for:
+
+Full path to your SQLite .db file
+
+Export format selection
+
+(If applicable) Hugging Face dataset repo + token
+
+Hugging Face Workflow (Recommended)
+
+For ML / analytics use cases:
+
+Choose Option 8 (Parquet export)
+or
+
+Choose Option 9 (Parquet + automatic HF upload)
+
+Parquet provides:
+
+Columnar compression
+
+Efficient loading
+
+Native compatibility with Hugging Face datasets
+
+Scalable large-table support
+
+Example loading:
+
+from datasets import load_dataset
+
+ds = load_dataset("username/dataset_name", data_dir="data")
+Large Database Handling
+
+Tables are exported in chunks (default: 200,000 rows)
+
+Large tables are automatically sharded:
+
+table.part000.parquet
+table.part001.parquet
+
+Prevents memory exhaustion
+
+Uninstall
+
+To remove the global command:
+
+sudo rm /usr/local/bin/dbconvert
+License
+
+MIT License
+
+Maintainer
+
+jch903
