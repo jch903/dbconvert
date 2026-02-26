@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/dbconvert_logo.png" alt="dbconvert logo" width="500">
+</p>
+
 # DBCONVERT  
 Professional SQLite Database Conversion Tool
 
@@ -14,6 +18,18 @@ Professional SQLite Database Conversion Tool
 - Analytics workflows  
 
 It supports multiple output formats, including Parquet and direct Hugging Face dataset upload.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/dbconvert1.png" alt="Main Menu" width="850">
+</p>
+
+<p align="center">
+  <img src="assets/dbconvert2.png" alt="Hugging Face Upload" width="850">
+</p>
 
 ---
 
@@ -63,7 +79,7 @@ cd dbconvert
 2️⃣ Install Python Dependencies
 pip install -r requirements.txt
 
-This installs:
+Installs:
 
 pandas
 
@@ -83,25 +99,22 @@ tabulate
 sudo apt install sqlite3 pv figlet toilet lolcat
 4️⃣ Install dbconvert Globally
 
-Run the provided installation script:
+Run the installation script:
 
 chmod +x install.sh
 ./install.sh
 
-This copies the executable into:
+This installs the command into:
 
 /usr/local/bin/dbconvert
 
-After installation, you can run:
+After installation, run:
 
 dbconvert
 
-from anywhere on your system.
+from anywhere.
 
 Usage
-
-Simply run:
-
 dbconvert
 
 You will be prompted for:
@@ -117,9 +130,8 @@ Hugging Face Workflow (Recommended)
 For ML / analytics use cases:
 
 Choose Option 8 (Parquet export)
-or
 
-Choose Option 9 (Parquet + automatic HF upload)
+Or choose Option 9 (Parquet + automatic HF upload)
 
 Parquet provides:
 
@@ -131,26 +143,22 @@ Native compatibility with Hugging Face datasets
 
 Scalable large-table support
 
-Example loading:
-
+Example Loading
 from datasets import load_dataset
 
 ds = load_dataset("username/dataset_name", data_dir="data")
 Large Database Handling
 
-Tables are exported in chunks (default: 200,000 rows)
+Tables exported in chunks (default: 200,000 rows)
 
-Large tables are automatically sharded:
+Large tables automatically sharded:
 
 table.part000.parquet
 table.part001.parquet
 
-Prevents memory exhaustion
+Prevents memory exhaustion.
 
 Uninstall
-
-To remove the global command:
-
 sudo rm /usr/local/bin/dbconvert
 License
 
@@ -159,3 +167,23 @@ MIT License
 Maintainer
 
 jch903
+
+
+---
+
+# Important
+
+You must:
+
+1. Create an `assets/` folder in your repo
+2. Add:
+   - `dbconvert_logo.png`
+   - `dbconvert1.png`
+   - `dbconvert2.png`
+3. Commit and push
+
+```bash
+mkdir assets
+git add assets
+git commit -m "Add README images"
+git push
