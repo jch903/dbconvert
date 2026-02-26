@@ -1,0 +1,11 @@
+*.parquet
+*.csv
+*.xlsx
+*.json
+*.sql
+*_csv/
+*_parquet/
+*_hf_dataset/
+__pycache__/
+*.pyc
+.env
