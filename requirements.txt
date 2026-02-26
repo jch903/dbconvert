@@ -1,0 +1,9 @@
+pandas>=2.0
+openpyxl>=3.1
+tqdm>=4.66
+tabulate>=0.9
+pyarrow>=14.0
+datasets>=2.16
+huggingface_hub>=0.20
+lolcat
+toilet
