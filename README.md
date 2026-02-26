@@ -95,6 +95,10 @@ tqdm
 
 tabulate
 
+lolcat
+
+toilet
+
 3️⃣ Install Required System Packages
 sudo apt install sqlite3 pv figlet toilet lolcat
 4️⃣ Install dbconvert Globally
@@ -168,22 +172,3 @@ Maintainer
 
 jch903
 
-
----
-
-# Important
-
-You must:
-
-1. Create an `assets/` folder in your repo
-2. Add:
-   - `dbconvert_logo.png`
-   - `dbconvert1.png`
-   - `dbconvert2.png`
-3. Commit and push
-
-```bash
-mkdir assets
-git add assets
-git commit -m "Add README images"
-git push
