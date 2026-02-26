@@ -1,0 +1,421 @@
+#!/bin/bash
+
+#############################################
+# dbconvert - Advanced SQLite DB Converter
+# Debian Linux Professional Edition (Revised)
+#############################################
+
+set -euo pipefail
+
+#############################################
+# Silent Dependency Installer
+#############################################
+
+install_dependencies() {
+    REQUIRED_PKGS=(sqlite3 python3 python3-pip pv figlet toilet lolcat)
+    # Python packages used by the embedded python snippets
+    PY_PKGS=(pandas openpyxl tqdm tabulate pyarrow datasets huggingface_hub)
+
+    for pkg in "${REQUIRED_PKGS[@]}"; do
+        dpkg -s "$pkg" &>/dev/null || sudo apt-get update -y &>/dev/null || true
+        dpkg -s "$pkg" &>/dev/null || sudo apt-get install -y "$pkg" &>/dev/null
+    done
+
+    for pkg in "${PY_PKGS[@]}"; do
+        python3 -c "import $pkg" &>/dev/null || pip3 install "$pkg" &>/dev/null
+    done
+}
+
+install_dependencies &>/dev/null
+
+#############################################
+# Beautiful Banner
+#############################################
+
+clear
+echo
+toilet -f future "DBCONVERT" | lolcat
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | lolcat
+echo " Professional SQLite Database Conversion Tool" | lolcat
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | lolcat
+echo
+
+#############################################
+# Smart Progress Bar
+#############################################
+
+progress() {
+    local current=$1
+    local total=$2
+    local message=$3
+    local percent filled empty
+
+    if [[ "$total" -le 0 ]]; then
+        total=1
+    fi
+
+    percent=$(( current * 100 / total ))
+    filled=$(( percent / 5 ))
+    empty=$(( 20 - filled ))
+
+    printf "\r["
+    printf "%0.s█" $(seq 1 "$filled" 2>/dev/null || true)
+    printf "%0.s░" $(seq 1 "$empty" 2>/dev/null || true)
+    printf "] %3d%%  %s" "$percent" "$message"
+}
+
+#############################################
+# Get Valid DB Path
+#############################################
+
+while true; do
+    echo
+    read -rp "Enter FULL path to SQLite .db file: " DB_PATH
+
+    if [[ ! -f "$DB_PATH" ]]; then
+        echo "❌ File not found. Please verify full path."
+        continue
+    fi
+
+    if ! sqlite3 "$DB_PATH" "PRAGMA integrity_check;" | grep -q "ok"; then
+        echo "❌ File exists but is not a valid SQLite database."
+        continue
+    fi
+
+    break
+done
+
+DB_DIR=$(dirname "$DB_PATH")
+DB_BASE=$(basename "$DB_PATH" .db)
+
+#############################################
+# Detect Tables (and fix missing TABLES var)
+#############################################
+
+# Exclude SQLite internal tables
+TABLES=$(sqlite3 "$DB_PATH" \
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+
+TABLE_COUNT=$(sqlite3 "$DB_PATH" \
+    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+
+if [[ "${TABLE_COUNT}" -eq 0 ]]; then
+    echo "No tables found in database."
+    exit 1
+fi
+
+echo
+echo "✔ Database validated"
+echo "✔ Tables detected: $TABLE_COUNT"
+echo
+
+#############################################
+# Format Menu
+#############################################
+
+echo "Choose export format:"
+echo "1) CSV (separate file per table)"
+echo "2) CSV (single combined file)  [can be huge]"
+echo "3) XLSX (multi-sheet)"
+echo "4) JSON (structured per table, single file) [can be huge]"
+echo "5) SQL Dump"
+echo "6) PostgreSQL Compatible Dump"
+echo "7) Markdown Tables"
+echo "8) Parquet (separate file per table)  [RECOMMENDED for Hugging Face]"
+echo "9) Hugging Face Dataset (Parquet + upload to HF datasets repo)"
+echo
+
+read -rp "Enter choice number: " CHOICE
+
+#############################################
+# Conversion Engine
+#############################################
+
+echo
+echo "Starting conversion..."
+echo
+
+set +e
+
+case $CHOICE in
+
+1)  # CSV per table
+    mkdir -p "$DB_DIR/${DB_BASE}_csv"
+    i=0
+    for table in $TABLES; do
+        ((i++))
+        progress "$i" "$TABLE_COUNT" "Exporting $table"
+        sqlite3 -header -csv "$DB_PATH" "SELECT * FROM \"$table\";" \
+            > "$DB_DIR/${DB_BASE}_csv/${table}.csv"
+    done
+    OUTPUT="$DB_DIR/${DB_BASE}_csv/"
+    ;;
+
+2)  # Combined CSV (warn: can be huge)
+    OUTPUT="$DB_DIR/${DB_BASE}.csv"
+    > "$OUTPUT"
+
+    i=0
+    while IFS= read -r table; do
+        ((i++))
+        progress "$i" "$TABLE_COUNT" "Appending $table"
+
+        echo "===== TABLE: $table =====" >> "$OUTPUT"
+
+        if sqlite3 -header -csv "$DB_PATH" \
+            "SELECT * FROM \"$table\";" >> "$OUTPUT" 2>/dev/null; then
+            echo >> "$OUTPUT"
+        else
+            echo "⚠ Skipped table: $table (export error)" >> "$OUTPUT"
+            echo >> "$OUTPUT"
+        fi
+
+    done < <(sqlite3 "$DB_PATH" \
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+    ;;
+
+3)  # XLSX
+    OUTPUT="$DB_DIR/${DB_BASE}.xlsx"
+python3 <<EOF
+import sqlite3
+import pandas as pd
+
+conn = sqlite3.connect("$DB_PATH")
+tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;", conn)
+
+writer = pd.ExcelWriter("$OUTPUT", engine="openpyxl")
+for table in tables["name"]:
+    df = pd.read_sql(f'SELECT * FROM "{table}"', conn)
+    df.to_excel(writer, sheet_name=str(table)[:31], index=False)
+writer.close()
+conn.close()
+EOF
+    progress 1 1 "XLSX created"
+    ;;
+
+4)  # JSON (single file, structured per table)
+    OUTPUT="$DB_DIR/${DB_BASE}.json"
+python3 <<EOF
+import sqlite3
+import json
+
+conn = sqlite3.connect("$DB_PATH")
+cursor = conn.cursor()
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+tables = [t[0] for t in cursor.fetchall()]
+
+db = {}
+for table in tables:
+    cursor.execute(f'SELECT * FROM "{table}"')
+    cols = [c[0] for c in cursor.description]
+    rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    db[table] = rows
+
+with open("$OUTPUT", "w", encoding="utf-8") as f:
+    json.dump(db, f, indent=2, ensure_ascii=False)
+
+conn.close()
+EOF
+    progress 1 1 "JSON created"
+    ;;
+
+5)  # SQL Dump
+    OUTPUT="$DB_DIR/${DB_BASE}.sql"
+    sqlite3 "$DB_PATH" .dump > "$OUTPUT"
+    progress 1 1 "SQL dump created"
+    ;;
+
+6)  # PostgreSQL Compatible (best-effort text transform; not perfect)
+    OUTPUT="$DB_DIR/${DB_BASE}_postgres.sql"
+    sqlite3 "$DB_PATH" .dump | \
+        sed 's/INTEGER PRIMARY KEY/AUTO_INCREMENT/g' \
+        > "$OUTPUT"
+    progress 1 1 "PostgreSQL dump created"
+    ;;
+
+7)  # Markdown
+    OUTPUT="$DB_DIR/${DB_BASE}.md"
+    > "$OUTPUT"
+    i=0
+    for table in $TABLES; do
+        ((i++))
+        progress "$i" "$TABLE_COUNT" "Formatting $table"
+        echo "## $table" >> "$OUTPUT"
+        sqlite3 -header -csv "$DB_PATH" "SELECT * FROM \"$table\";" \
+        | python3 -c '
+import sys, csv
+from tabulate import tabulate
+reader = csv.reader(sys.stdin)
+rows = list(reader)
+if not rows:
+    print("(empty)")
+else:
+    headers = rows[0]
+    data = rows[1:]
+    print(tabulate(data, headers=headers, tablefmt="github"))
+' >> "$OUTPUT"
+        echo >> "$OUTPUT"
+    done
+    ;;
+
+8)  # Parquet per table (recommended for HF)
+    mkdir -p "$DB_DIR/${DB_BASE}_parquet"
+    OUTPUT="$DB_DIR/${DB_BASE}_parquet/"
+python3 <<EOF
+import os
+import sqlite3
+import pandas as pd
+
+db_path = "$DB_PATH"
+out_dir = "$DB_DIR/${DB_BASE}_parquet"
+os.makedirs(out_dir, exist_ok=True)
+
+conn = sqlite3.connect(db_path)
+tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;", conn)["name"].tolist()
+
+for t in tables:
+    # Chunking avoids blowing memory on very large tables
+    # Writes a single parquet per table (concatenated in-memory by chunks) is not ideal.
+    # Instead, we write one parquet per table using pandas if feasible; for huge tables,
+    # we write sharded parquet parts.
+    chunksize = 200000
+    shard = 0
+    any_rows = False
+
+    for chunk in pd.read_sql_query(f'SELECT * FROM "{t}"', conn, chunksize=chunksize):
+        any_rows = True
+        if len(chunk) == 0:
+            continue
+        # If only one chunk, we still write as part000 to keep consistent behavior.
+        fname = f"{t}.part{shard:03d}.parquet"
+        chunk.to_parquet(os.path.join(out_dir, fname), index=False)
+        shard += 1
+
+    if not any_rows:
+        # Create an empty parquet with correct schema? SQLite gives no rows -> write empty.
+        df_empty = pd.read_sql_query(f'SELECT * FROM "{t}" LIMIT 0', conn)
+        df_empty.to_parquet(os.path.join(out_dir, f"{t}.part000.parquet"), index=False)
+
+conn.close()
+EOF
+    progress 1 1 "Parquet export complete"
+    ;;
+
+9)  # Hugging Face Dataset (Parquet + upload)
+    # Creates a folder ready for HF dataset repo: ./<db>_hf_dataset/data/*.parquet + README.md
+    HF_DIR="$DB_DIR/${DB_BASE}_hf_dataset"
+    HF_DATA_DIR="$HF_DIR/data"
+    mkdir -p "$HF_DATA_DIR"
+
+    echo
+    read -rp "Enter Hugging Face dataset repo id (e.g., username/${DB_BASE}): " HF_REPO_ID
+    echo
+
+    # Token: prefer HF_TOKEN env; otherwise prompt silently
+    HF_TOKEN="${HF_TOKEN:-}"
+    if [[ -z "$HF_TOKEN" ]]; then
+        read -rsp "Enter Hugging Face token (will not echo): " HF_TOKEN
+        echo
+    fi
+
+    # Export parquet shards into HF_DATA_DIR
+python3 <<EOF
+import os
+import sqlite3
+import pandas as pd
+
+db_path = "$DB_PATH"
+hf_data_dir = "$HF_DATA_DIR"
+os.makedirs(hf_data_dir, exist_ok=True)
+
+conn = sqlite3.connect(db_path)
+tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;", conn)["name"].tolist()
+
+for t in tables:
+    chunksize = 200000
+    shard = 0
+    any_rows = False
+    for chunk in pd.read_sql_query(f'SELECT * FROM "{t}"', conn, chunksize=chunksize):
+        any_rows = True
+        if len(chunk) == 0:
+            continue
+        fname = f"{t}.part{shard:03d}.parquet"
+        chunk.to_parquet(os.path.join(hf_data_dir, fname), index=False)
+        shard += 1
+    if not any_rows:
+        df_empty = pd.read_sql_query(f'SELECT * FROM "{t}" LIMIT 0', conn)
+        df_empty.to_parquet(os.path.join(hf_data_dir, f"{t}.part000.parquet"), index=False)
+
+conn.close()
+EOF
+
+    # Minimal dataset card
+    cat > "$HF_DIR/README.md" <<EOF
+---
+license: mit
+task_categories:
+- tabular-classification
+- tabular-regression
+pretty_name: ${DB_BASE} (SQLite export)
+---
+
+# ${DB_BASE} dataset
+
+This dataset was exported from a SQLite database into Apache Parquet shards (one or more files per table).
+
+## Structure
+- Each SQLite table is exported to one or more Parquet files:
+  - \`data/<table>.part000.parquet\`
+  - \`data/<table>.part001.parquet\`, etc. for large tables.
+
+## Loading example (Python)
+
+\`\`\`python
+from datasets import load_dataset
+
+ds = load_dataset("${HF_REPO_ID}", data_dir="data")
+print(ds)
+\`\`\`
+
+Notes:
+- This repo uses Parquet shards for efficient storage and loading.
+EOF
+
+    # Upload to HF
+python3 <<EOF
+import os
+from huggingface_hub import HfApi
+
+repo_id = "$HF_REPO_ID"
+token = "$HF_TOKEN"
+folder_path = "$HF_DIR"
+
+api = HfApi()
+api.create_repo(repo_id=repo_id, repo_type="dataset", token=token, exist_ok=True)
+api.upload_folder(
+    folder_path=folder_path,
+    repo_id=repo_id,
+    repo_type="dataset",
+    token=token
+)
+print("Uploaded dataset folder to Hugging Face:", repo_id)
+EOF
+
+    OUTPUT="$HF_DIR (uploaded to $HF_REPO_ID)"
+    progress 1 1 "HF dataset created + uploaded"
+    ;;
+
+*)
+    echo "Invalid selection."
+    exit 1
+    ;;
+esac
+
+echo
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Conversion Complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Original DB : $DB_PATH"
+echo "Output      : $OUTPUT"
+echo
